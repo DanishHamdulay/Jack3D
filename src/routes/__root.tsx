@@ -78,10 +78,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Jack Mirror — Free Image to 3D" },
+      { title: "Jack 3D — Free Image to 3D" },
       { name: "description", content: "Turn 2D photos into textured 3D models in your browser." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Jack Mirror — Free Image to 3D" },
+      { property: "og:title", content: "Jack 3D — Free Image to 3D" },
       { property: "og:description", content: "Turn 2D photos into textured 3D models in your browser." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

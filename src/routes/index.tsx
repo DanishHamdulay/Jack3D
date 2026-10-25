@@ -4,6 +4,7 @@ import type * as THREE from "three";
 import type { DepthResult } from "@/lib/depth";
 import type { CutoutResult } from "@/lib/segment";
 import type { ViewMode } from "@/components/ModelStage";
+import type { BackMode, EdgeProfile, ResolutionPreset } from "@/lib/mesh";
 
 const ModelStage = lazy(() => import("@/components/ModelStage"));
 
@@ -11,13 +12,13 @@ export const Route = createFileRoute("/")({
   head: () => ({
     links: [{ rel: "icon", type: "image/png", href: "/jack.png" }],
     meta: [
-      { title: "Jack Mirror — Free Image to 3D Model Generator" },
+      { title: "Jack 3D — Free Image to 3D Model Generator" },
       {
         name: "description",
         content:
           "Turn any 2D photo into a textured 3D model right in your browser. Free, private, no account — orbit, tweak relief and export GLB.",
       },
-      { property: "og:title", content: "Jack Mirror — Free Image to 3D Model Generator" },
+      { property: "og:title", content: "Jack 3D — Free Image to 3D Model Generator" },
       {
         property: "og:description",
         content:
@@ -43,24 +44,22 @@ function Index() {
   const [status, setStatus] = useState<Status>("idle");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [relief, setRelief] = useState(1.1);
-  const [smooth, setSmooth] = useState(3);
+  const [relief, setRelief] = useState(1.45);
+  const [smooth, setSmooth] = useState(5);
   const [thickness, setThickness] = useState(0.7);
+  const [resolution, setResolution] = useState<ResolutionPreset>("medium");
+  const [backMode, setBackMode] = useState<BackMode>("flat");
+  const [backColor, setBackColor] = useState<string>("#27272a");
+  const [colorSides, setColorSides] = useState<boolean>(false);
+  const [sampledSideColor, setSampledSideColor] = useState<string>("#27272a");
+  const [edgeProfile, setEdgeProfile] = useState<EdgeProfile>("rounded");
+  const [enableNormalMap, setEnableNormalMap] = useState(true);
+  const [normalStrength, setNormalStrength] = useState(1.8);
   const [removeBg, setRemoveBg] = useState(true);
   const [autoDetect, setAutoDetect] = useState(true);
   const [mode, setMode] = useState<ViewMode>("solid");
   const [spin, setSpin] = useState(true);
   const objectRef = useRef<THREE.Object3D | null>(null);
-
-  const [depthControls, setDepthControls] = useState({
-    front: 1.0,
-    back: 1.0,
-    left: 1.0,
-    right: 1.0,
-    top: 1.0,
-    bottom: 1.0,
-  });
-
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -77,7 +76,15 @@ function Index() {
     setStatus("idle");
     setError(null);
     setFileName(file.name);
-    setImageUrl(URL.createObjectURL(file));
+    const url = URL.createObjectURL(file);
+    setImageUrl(url);
+
+    import("@/lib/image-utils").then(({ extractEdgeColor }) => {
+      extractEdgeColor(url).then((color) => {
+        setSampledSideColor(color);
+        setBackColor(color);
+      });
+    });
   };
 
   const generate = async () => {
@@ -111,8 +118,23 @@ function Index() {
         const { removeBackground } = await import("@/lib/segment");
         cut = await removeBackground(src, (p) => setProgress(p));
         setCutout(cut);
+
+        const { extractEdgeColor } = await import("@/lib/image-utils");
+        extractEdgeColor(cut.url).then((edgeColor) => {
+          setSampledSideColor(edgeColor);
+          setBackColor((prev) =>
+            prev === "#27272a" || prev === sampledSideColor ? edgeColor : prev,
+          );
+        });
       } else {
         setCutout(null);
+        const { extractEdgeColor } = await import("@/lib/image-utils");
+        extractEdgeColor(src).then((edgeColor) => {
+          setSampledSideColor(edgeColor);
+          setBackColor((prev) =>
+            prev === "#27272a" || prev === sampledSideColor ? edgeColor : prev,
+          );
+        });
       }
 
       setStatus("loading-model");
@@ -173,7 +195,7 @@ function Index() {
             alt="Jack Logo"
             className="size-7 rounded-md object-cover"
           />
-          <span className="font-display text-[15px] font-semibold tracking-tight">Jack Mirror</span>
+          <span className="font-display text-[15px] font-semibold tracking-tight">Jack 3D</span>
           <span className="ml-2 rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-widest text-muted-foreground">
             Free · runs on your device
           </span>
@@ -223,24 +245,191 @@ function Index() {
             <Slider
               label="Solid thickness"
               value={thickness}
-              min={0.15}
+              min={0.0}
               max={1.5}
               step={0.05}
               onChange={setThickness}
             />
-            <div className="pt-2 border-t border-border/60">
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                Depth Control (Per Side)
-              </p>
-              <div className="space-y-1">
-                <DepthControl label="Front" value={depthControls.front} onChange={v => setDepthControls(d => ({ ...d, front: v }))} />
-                <DepthControl label="Back" value={depthControls.back} onChange={v => setDepthControls(d => ({ ...d, back: v }))} />
-                <DepthControl label="Left" value={depthControls.left} onChange={v => setDepthControls(d => ({ ...d, left: v }))} />
-                <DepthControl label="Right" value={depthControls.right} onChange={v => setDepthControls(d => ({ ...d, right: v }))} />
-                <DepthControl label="Top" value={depthControls.top} onChange={v => setDepthControls(d => ({ ...d, top: v }))} />
-                <DepthControl label="Bottom" value={depthControls.bottom} onChange={v => setDepthControls(d => ({ ...d, bottom: v }))} />
+
+            <div>
+              <p className="mb-1.5 text-xs text-muted-foreground">Mesh Resolution</p>
+              <div className="grid grid-cols-4 gap-1 rounded-md bg-secondary p-1">
+                {[
+                  { id: "low", label: "Fast" },
+                  { id: "medium", label: "Med" },
+                  { id: "high", label: "High" },
+                  { id: "ultra", label: "Ultra" },
+                ].map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => setResolution(r.id as ResolutionPreset)}
+                    className={`rounded px-1.5 py-1 text-[11px] font-medium transition ${
+                      resolution === r.id
+                        ? "bg-primary font-semibold text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {r.label}
+                  </button>
+                ))}
               </div>
             </div>
+
+            <div>
+              <p className="mb-1.5 text-xs text-muted-foreground">Edge Silhouette</p>
+              <div className="grid grid-cols-3 gap-1 rounded-md bg-secondary p-1">
+                {[
+                  { id: "rounded", label: "Dome" },
+                  { id: "sharp", label: "Sharp" },
+                  { id: "chamfer", label: "Chamfer" },
+                ].map((e) => (
+                  <button
+                    key={e.id}
+                    onClick={() => setEdgeProfile(e.id as EdgeProfile)}
+                    className={`rounded px-1.5 py-1 text-[11px] font-medium transition ${
+                      edgeProfile === e.id
+                        ? "bg-primary font-semibold text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {e.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-1.5 text-xs text-muted-foreground">Back-side Shape</p>
+              <div className="grid grid-cols-2 gap-1 rounded-md bg-secondary p-1">
+                {[
+                  {
+                    id: "flat",
+                    label: "Flat Back",
+                    sub: "Organic curved back with side color",
+                  },
+                  {
+                    id: "mirrored",
+                    label: "Mirror Front",
+                    sub: "Mirror front side to back",
+                  },
+                ].map((b) => (
+                  <button
+                    key={b.id}
+                    onClick={() => setBackMode(b.id as BackMode)}
+                    className={`rounded px-2 py-1.5 text-left transition ${
+                      backMode === b.id
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground hover:bg-background/40"
+                    }`}
+                  >
+                    <div className="text-[11px] font-semibold">{b.label}</div>
+                    <div
+                      className={`text-[9px] ${
+                        backMode === b.id
+                          ? "text-primary-foreground/85"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {b.sub}
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {backMode === "flat" && (
+                <div className="mt-2 space-y-2 rounded-lg border border-border/70 bg-card/60 p-2.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-foreground">Back & Side Color</span>
+                    <span className="font-mono text-[10px] text-muted-foreground uppercase">{backColor}</span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {/* Sampled Side Color */}
+                    <button
+                      type="button"
+                      title={`Sampled Edge/Side Color (${sampledSideColor})`}
+                      onClick={() => setBackColor(sampledSideColor)}
+                      className={`relative flex size-6 items-center justify-center rounded-full border transition ${
+                        backColor.toLowerCase() === sampledSideColor.toLowerCase()
+                          ? "border-primary ring-2 ring-primary/40 scale-110"
+                          : "border-border hover:scale-105"
+                      }`}
+                      style={{ backgroundColor: sampledSideColor }}
+                    >
+                      <span className="text-[9px] font-bold text-white drop-shadow">A</span>
+                    </button>
+
+                    {/* Presets */}
+                    {[
+                      { name: "Dark Slate", hex: "#18181b" },
+                      { name: "Charcoal", hex: "#334155" },
+                      { name: "Warm Clay", hex: "#78350f" },
+                      { name: "Brass / Gold", hex: "#b45309" },
+                      { name: "Ceramic White", hex: "#f8fafc" },
+                    ].map((c) => (
+                      <button
+                        key={c.hex}
+                        type="button"
+                        title={c.name}
+                        onClick={() => setBackColor(c.hex)}
+                        className={`size-6 rounded-full border transition ${
+                          backColor.toLowerCase() === c.hex.toLowerCase()
+                            ? "border-primary ring-2 ring-primary/40 scale-110"
+                            : "border-border hover:scale-105"
+                        }`}
+                        style={{ backgroundColor: c.hex }}
+                      />
+                    ))}
+
+                    {/* Custom Color Picker */}
+                    <label
+                      title="Custom color (or anything)"
+                      className="relative flex size-6 cursor-pointer items-center justify-center rounded-full border border-border bg-gradient-to-tr from-indigo-500 via-rose-500 to-amber-400 hover:scale-105 transition"
+                    >
+                      <input
+                        type="color"
+                        value={backColor}
+                        onChange={(e) => setBackColor(e.target.value)}
+                        className="sr-only"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="flex items-center justify-between pt-0.5 text-[11px] text-muted-foreground cursor-pointer">
+                    <span>Apply color to rim sides</span>
+                    <input
+                      type="checkbox"
+                      checked={colorSides}
+                      onChange={(e) => setColorSides(e.target.checked)}
+                      className="accent-primary"
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-border/60 space-y-2">
+              <label className="flex items-center justify-between text-xs text-muted-foreground cursor-pointer">
+                <span>Surface micro-relief</span>
+                <input
+                  type="checkbox"
+                  checked={enableNormalMap}
+                  onChange={(e) => setEnableNormalMap(e.target.checked)}
+                  className="accent-primary"
+                />
+              </label>
+              {enableNormalMap && (
+                <Slider
+                  label="Micro-relief intensity"
+                  value={normalStrength}
+                  min={0.5}
+                  max={3.0}
+                  step={0.1}
+                  onChange={setNormalStrength}
+                />
+              )}
+            </div>
+
             <label className="flex items-center justify-between text-xs text-muted-foreground">
               AI object detection
               <input
@@ -307,35 +496,20 @@ function Index() {
                 depth={depth}
                 cutout={cutout}
                 imageUrl={workUrl ?? imageUrl}
-
                 relief={relief}
                 smooth={smooth}
                 thickness={thickness}
+                resolution={resolution}
+                backMode={backMode}
+                backColor={backColor}
+                colorSides={colorSides}
+                edgeProfile={edgeProfile}
+                enableNormalMap={enableNormalMap}
+                normalStrength={normalStrength}
                 mode={mode}
                 spin={spin}
-                depthControls={depthControls}
                 onObject={onObject}
               />
-              <div className="pointer-events-none absolute inset-0 z-10">
-                <div className="pointer-events-auto absolute top-4 left-1/2 -translate-x-1/2">
-                  <OverlayControl label="Top" value={depthControls.top} onChange={(v) => setDepthControls((d) => ({ ...d, top: v }))} />
-                </div>
-                <div className="pointer-events-auto absolute bottom-12 left-1/2 -translate-x-1/2">
-                  <OverlayControl label="Bottom" value={depthControls.bottom} onChange={(v) => setDepthControls((d) => ({ ...d, bottom: v }))} />
-                </div>
-                <div className="pointer-events-auto absolute left-4 top-1/2 -translate-y-1/2">
-                  <OverlayControl label="Left" value={depthControls.left} onChange={(v) => setDepthControls((d) => ({ ...d, left: v }))} />
-                </div>
-                <div className="pointer-events-auto absolute right-4 top-1/2 -translate-y-1/2">
-                  <OverlayControl label="Right" value={depthControls.right} onChange={(v) => setDepthControls((d) => ({ ...d, right: v }))} />
-                </div>
-                <div className="pointer-events-auto absolute top-4 left-4">
-                  <OverlayControl label="Front" value={depthControls.front} onChange={(v) => setDepthControls((d) => ({ ...d, front: v }))} />
-                </div>
-                <div className="pointer-events-auto absolute top-4 right-4">
-                  <OverlayControl label="Back" value={depthControls.back} onChange={(v) => setDepthControls((d) => ({ ...d, back: v }))} />
-                </div>
-              </div>
             </Suspense>
           ) : busy ? (
             <Centered>
@@ -426,7 +600,41 @@ function Index() {
               v={subject ? `${subject.label} · ${Math.round(subject.score * 100)}%` : "—"}
             />
             <Row k="Texture" v={imageUrl ? "Source image" : "—"} />
-
+            <Row
+              k="Resolution"
+              v={
+                resolution === "ultra"
+                  ? "720 grid (Ultra HD)"
+                  : resolution === "high"
+                    ? "512 grid (High)"
+                    : resolution === "low"
+                      ? "180 grid (Fast)"
+                      : "360 grid (Standard)"
+              }
+            />
+            <Row k="Edge Seam" v="Split normals (crisp)" />
+            <Row
+              k="Micro-relief"
+              v={enableNormalMap ? `Active (${normalStrength.toFixed(1)}×)` : "Disabled"}
+            />
+            <Row
+              k="Back shape"
+              v={
+                backMode === "flat"
+                  ? "Flat Base (Solid back)"
+                  : "Mirrored 3D (Front-to-back)"
+              }
+            />
+            {backMode === "flat" && (
+              <Row
+                k="Back color"
+                v={
+                  backColor.toLowerCase() === sampledSideColor.toLowerCase()
+                    ? `Auto Side (${backColor})`
+                    : backColor
+                }
+              />
+            )}
             <Row k="Format" v="GLB / glTF 2.0" />
           </dl>
         </aside>
@@ -467,7 +675,9 @@ function Slider({
     <label className="block">
       <span className="mb-1 flex justify-between text-xs text-muted-foreground">
         {label}
-        <span className="font-mono text-foreground">{value}</span>
+        <span className="font-mono text-foreground">
+          {Number.isInteger(step) ? value : value.toFixed(2)}
+        </span>
       </span>
       <input
         type="range"
@@ -482,60 +692,4 @@ function Slider({
   );
 }
 
-function DepthControl({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
-  return (
-    <div className="flex items-center justify-between text-xs text-muted-foreground">
-      <span className="w-12">{label}</span>
-      <div className="flex items-center gap-1">
-        <button
-          onClick={() => onChange(value - 1)}
-          className="rounded bg-secondary px-2 py-0.5 transition hover:bg-primary hover:text-primary-foreground"
-        >
-          −
-        </button>
-        <input
-          type="number"
-          step="0.1"
-          value={Number(value.toFixed(2))}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="w-14 bg-transparent text-center font-mono outline-none"
-        />
-        <button
-          onClick={() => onChange(value + 1)}
-          className="rounded bg-secondary px-2 py-0.5 transition hover:bg-primary hover:text-primary-foreground"
-        >
-          +
-        </button>
-      </div>
-    </div>
-  );
-}
 
-function OverlayControl({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
-  return (
-    <div className="flex flex-col items-center gap-1 rounded-md border border-border bg-card/80 p-1.5 text-[11px] text-muted-foreground backdrop-blur">
-      <span className="font-semibold uppercase tracking-widest text-[9px]">{label}</span>
-      <div className="flex items-center gap-1">
-        <button
-          onClick={() => onChange(value - 1)}
-          className="rounded bg-secondary px-1.5 py-0.5 transition hover:bg-primary hover:text-primary-foreground"
-        >
-          −
-        </button>
-        <input
-          type="number"
-          step="0.1"
-          value={Number(value.toFixed(2))}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="w-12 bg-transparent text-center font-mono outline-none"
-        />
-        <button
-          onClick={() => onChange(value + 1)}
-          className="rounded bg-secondary px-1.5 py-0.5 transition hover:bg-primary hover:text-primary-foreground"
-        >
-          +
-        </button>
-      </div>
-    </div>
-  );
-}

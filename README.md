@@ -1,6 +1,6 @@
-# Image to 3D Creator
+# Jack 3D
 
-create web like this which will take input 2d img and provide 3d object with perfect shape color etc exact same
+Turn any 2D photo into a textured 3D model right in your browser. Free, private, and runs entirely on your device.
 
 This project was built with [Lovable](https://lovable.dev).
 
